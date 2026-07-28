@@ -47,15 +47,20 @@ search in-DB — no separate vector store.
 - **ScraperAPI + custom parsers** deferred to Scale phase for high-volume structured portals
   (Zameen/Graana/OLX have stable HTML) to cut per-listing cost. Pilot uses Apify only for speed.
 
-### 2. NLP/LLM extraction — runs in the **Celery worker**, model **Claude Haiku 4.5**
+### 2. NLP/LLM extraction — runs in the **Celery worker**, model **Gemini 2.5 Flash**
+- Provider-agnostic extraction layer (`app/extraction`) so the model can be swapped without
+  touching the pipeline. Gemini chosen for the pilot: **free tier** via Google AI Studio lets us
+  validate extraction accuracy at zero cost, Flash is cheap at scale, and it handles
+  Urdu/Roman-Urdu listings well. Claude Haiku/Sonnet remain drop-in alternatives.
 - Two-stage in the pipeline (never in the dashboard):
   1. **Cheap pre-filter** (keyword/regex) drops obvious non-listings before spending tokens.
-  2. **Haiku 4.5** structured extraction via **tool-use with a strict JSON schema**
+  2. **Gemini 2.5 Flash** structured extraction via **`response_schema` (strict JSON)**
      (location, price, area, bedrooms, contact phone, seller intent, seller type).
-  3. **Confidence gate** → low-confidence posts escalate to **Sonnet 4.6**.
-- Haiku chosen for high-volume cost/latency with solid structured output; Sonnet only for the
-  ambiguous tail. Anthropic has no embeddings model, so dedup embeddings use a local
-  `sentence-transformers` model (see below), not the LLM.
+  3. **Confidence gate** → low-confidence posts escalate to **Gemini 2.5 Pro**.
+- Free-tier caveats: rate limits (low RPM/daily cap — fine for pilot, throttle or go paid at
+  scale) and free-tier requests may be used by Google for training (data is public listings,
+  low sensitivity; flag for legal sign-off). Dedup embeddings use a local
+  `sentence-transformers` model (offline, deterministic), not the LLM.
 
 ### 3. Deduplication — **multi-signal, phone-first**
 - **Hard key:** normalized `contact_phone` (E.164). Exact match = same seller/listing across
@@ -111,12 +116,15 @@ validate the biggest unknown (extraction accuracy) earliest, before investing in
 
 ### Phase 1a — Prove extraction (one-shot, no scheduler) — *Pilot*
 Thinnest end-to-end: `python -m app.scan --source zameen` fetches one source via Apify →
-Haiku structured extraction → writes `leads` rows to Postgres → prints a table.
+Gemini structured extraction → writes `leads` rows to Postgres → prints a table.
 - **Deliverable:** real structured leads from real posts, viewable via CLI/query.
 - **Test:** run manually, eyeball extraction accuracy on ~50 posts. This de-risks the LLM
   schema before any queue/dashboard work.
 - **Includes:** Docker Compose (Postgres+Redis), settings/secrets, Apify client, the full
-  `leads` schema, Haiku extraction with JSON-schema tool-use.
+  `leads` schema, Gemini extraction with `response_schema` JSON.
+- **Status (2026-07-29): BUILT.** DB + schema + adapter (with offline fixtures) + Gemini
+  extractor + `scan` CLI done. Offline-verified: 9 unit tests pass, lint clean, Postgres
+  initialized (7 tables, pgvector). Live extraction run pending a free `GEMINI_API_KEY`.
 
 ### Phase 1b — Schedule it + minimal dashboard — *Pilot*
 Wrap 1a in **Celery Beat** (periodic scans) + a **Source adapter interface** (one source now,

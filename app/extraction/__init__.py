@@ -1,1 +1,1 @@
-"""LLM extraction stage (Claude Haiku 4.5, tool-use JSON schema). Built in Phase 1a."""
+"""LLM extraction stage: Gemini 2.5 Flash, response_schema JSON, provider-agnostic (Phase 1a)."""

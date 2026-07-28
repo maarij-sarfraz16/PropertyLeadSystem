@@ -1,0 +1,44 @@
+[
+  {
+    "id": "zm-1001",
+    "url": "https://www.zameen.com/Property/lahore_dha_defence-1001.html",
+    "title": "10 Marla House for Sale in DHA Phase 5",
+    "description": "10 marla brand new house for sale in DHA Phase 5, Lahore. 5 bed, double unit, near park. Demand 4.75 crore. Direct owner, no agents please. Call 0300-1234567.",
+    "images": ["https://img.zameen.com/1001/a.jpg", "https://img.zameen.com/1001/b.jpg"]
+  },
+  {
+    "id": "zm-1002",
+    "url": "https://www.zameen.com/Property/lahore_bahria-1002.html",
+    "title": "5 Marla Plot Bahria Town",
+    "description": "5 marla residential plot available for sale in Bahria Town Lahore, sector C. Price 95 lakh slightly negotiable. Contact agent Ali 0321 9876543.",
+    "images": ["https://img.zameen.com/1002/a.jpg"]
+  },
+  {
+    "id": "zm-1003",
+    "url": "https://www.zameen.com/Property/lahore_johar-1003.html",
+    "title": "Portion for rent Johar Town",
+    "description": "Upper portion 3 bed for rent in Johar Town near Emporium. Rent 65000 per month. Family only. Owner: 042-35551234.",
+    "images": []
+  },
+  {
+    "id": "zm-1004",
+    "url": "https://www.zameen.com/Property/lahore_wanted-1004.html",
+    "title": "Wanted 1 Kanal house",
+    "description": "Need 1 kanal house on rent in Gulberg for a family, budget around 2.5 lakh per month. Serious owners contact 0345-1122334.",
+    "images": []
+  },
+  {
+    "id": "zm-1005",
+    "url": "https://www.zameen.com/Property/lahore_shop-1005.html",
+    "title": "Commercial shop DHA",
+    "description": "Ground floor shop 2 marla for sale, DHA Phase 3 commercial. Good rental income. Price 3 crore. Dealer: Malik Estate 0333-4455667.",
+    "images": ["https://img.zameen.com/1005/a.jpg"]
+  },
+  {
+    "id": "zm-1006",
+    "url": "https://www.zameen.com/blog/best-areas-lahore",
+    "title": "Best areas to invest in Lahore 2026",
+    "description": "Our blog guide to top investment areas in Lahore this year. Read more on the portal.",
+    "images": []
+  }
+]

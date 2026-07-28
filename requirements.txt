@@ -18,8 +18,8 @@ redis==5.2.1
 apify-client==1.9.2
 apify-shared==1.4.1  # pin <2: apify-client 1.9.2 imports ignore_docs, removed in apify-shared 2.x
 
-# LLM extraction
-anthropic==0.42.0
+# LLM extraction (provider-agnostic layer; Gemini default for free-tier pilot)
+google-genai>=1.0.0,<2
 
 # Dedup / NLP (used Phase 2; installed now to keep one env)
 imagehash==4.3.1
@@ -27,6 +27,7 @@ Pillow==11.0.0
 
 # CLI / utils
 typer==0.15.1
+click==8.1.8  # pin <8.2: click 8.2+ changed Parameter.make_metavar signature, breaks typer 0.15
 rich==13.9.4
 httpx==0.28.1
 phonenumbers==8.13.52

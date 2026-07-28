@@ -12,7 +12,7 @@ phased build order.
 - **Backend / pipeline:** Python (FastAPI) + Celery + Redis
 - **Data:** PostgreSQL + pgvector
 - **Scraping:** Apify (primary)
-- **LLM extraction:** Claude Haiku 4.5 (escalates to Sonnet 4.6 on low confidence)
+- **LLM extraction:** Gemini 2.5 Flash (escalates to 2.5 Pro on low confidence); provider-agnostic layer
 - **Dashboard:** React (Vite) — added in Phase 1b
 
 ## Layout
@@ -45,7 +45,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # 3. Secrets
-cp .env.example .env   # then fill in APIFY_TOKEN and ANTHROPIC_API_KEY
+cp .env.example .env   # then fill in APIFY_TOKEN and GEMINI_API_KEY
 ```
 
 Feature build (Phase 1a onward) begins after scaffolding. Nothing runs end-to-end yet.

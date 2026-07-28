@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     # Apify
     apify_token: str | None = Field(default=None)
 
-    # Anthropic
-    anthropic_api_key: str | None = Field(default=None)
-    extraction_model: str = Field(default="claude-haiku-4-5-20251001")
-    escalation_model: str = Field(default="claude-sonnet-4-6")
+    # LLM extraction (Gemini via Google AI Studio; free tier for pilot)
+    gemini_api_key: str | None = Field(default=None)
+    extraction_model: str = Field(default="gemini-2.5-flash")
+    escalation_model: str = Field(default="gemini-2.5-pro")
     extraction_confidence_threshold: float = Field(default=0.6)
 
 
