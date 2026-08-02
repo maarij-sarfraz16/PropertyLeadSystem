@@ -112,6 +112,7 @@ class LeadSource(Base):
     raw_post_id: Mapped[str] = mapped_column(ForeignKey("raw_posts.id"))
 
     lead: Mapped[Lead] = relationship(back_populates="sources")
+    raw_post: Mapped[RawPost] = relationship()
 
 
 class Photo(Base):
