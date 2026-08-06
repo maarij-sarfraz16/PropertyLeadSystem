@@ -1,15 +1,25 @@
-import { LayoutDashboard, LogOut, ShieldCheck, Sparkles } from 'lucide-react'
+import { Building2, LayoutDashboard, LogOut, ShieldCheck, Sparkles } from 'lucide-react'
 import { memo } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../lib/auth'
+import { AlertBell } from '../components/AlertBell'
 import { GlassCard } from '../components/ui'
 
-const links = [{ to: '/admin', label: 'Overview' }, { to: '/admin/leads', label: 'Leads' }]
+const links = [
+  { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/admin/leads', label: 'Leads', icon: Building2, end: false },
+]
 
 export const DashboardLayout = memo(function DashboardLayout() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const role = user?.role ?? 'admin'
+
+  // The drawer lives on the Leads page, so opening an alert from anywhere routes there and
+  // passes the lead id along; LeadsPage picks it up and opens the drawer.
+  const openLead = (leadId: string) =>
+    navigate(`/admin/leads?lead=${encodeURIComponent(leadId)}`)
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -20,10 +30,13 @@ export const DashboardLayout = memo(function DashboardLayout() {
               <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-2 text-sky-300">
                 <Sparkles className="size-5" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Property Radar</p>
-                <p className="text-lg font-semibold text-white">{user?.name ?? 'Ops Desk'}</p>
+                <p className="truncate text-lg font-semibold text-white">
+                  {user?.name ?? 'Ops Desk'}
+                </p>
               </div>
+              <AlertBell onOpenLead={openLead} />
             </div>
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
@@ -39,11 +52,13 @@ export const DashboardLayout = memo(function DashboardLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  // Without `end`, /admin would also highlight while /admin/leads is open.
+                  end={item.end}
                   className={({ isActive }) =>
                     `flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${isActive ? 'bg-sky-500/20 text-sky-100' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`
                   }
                 >
-                  <LayoutDashboard className="size-4" />
+                  <item.icon className="size-4" />
                   {item.label}
                 </NavLink>
               ))}
@@ -59,7 +74,9 @@ export const DashboardLayout = memo(function DashboardLayout() {
           </GlassCard>
         </aside>
 
-        <main className="flex-1">
+        {/* min-w-0: without it a flex item defaults to min-width:auto, so a long lead title
+            widens the whole page instead of truncating inside its row. */}
+        <main className="min-w-0 flex-1">
           <Outlet />
         </main>
       </div>

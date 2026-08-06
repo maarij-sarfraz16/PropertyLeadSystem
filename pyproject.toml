@@ -13,3 +13,5 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The realtime broker is asyncio; its tests carry @pytest.mark.asyncio.
+asyncio_mode = "strict"

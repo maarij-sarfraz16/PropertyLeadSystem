@@ -7,15 +7,14 @@ Premium, interactive frontend command center for Pakistan real estate lead intel
 - React + TypeScript + Vite
 - Tailwind CSS (v4)
 - Framer Motion
-- Recharts
 - Lucide React
+- TanStack Query
 
 ## Features
 
 - Dark premium AI SaaS aesthetic with glassmorphism and gradients
-- Animated KPI radar cards
-- Live intelligence feed
-- Realtime analytics charts
+- Animated KPI stat cards
+- Live intelligence feed, updated over a WebSocket (no polling, no refresh)
 - AI lead scoring panel
 - Source monitoring cards
 - Extraction pipeline visualization
@@ -47,5 +46,10 @@ npm run preview
 
 ## Notes
 
-- Current data is realistic mock data for UI development.
-- Next integration step is to connect API endpoints for metrics, leads, and source statuses.
+- All data comes from the live backend (`/api/dashboard/overview`, `/api/leads`); there is no
+  mock data. Start the backend first or the dashboard renders empty states.
+- New leads arrive over `/ws/leads` and are written straight into the query cache, so the
+  table updates without a refetch. Polling remains only as a 2-minute fallback.
+- There are deliberately no charts. The aggregates that backed them were mostly constant or
+  permanently zero, so the charting layer and its `recharts` dependency were removed — this
+  roughly halved the production bundle (835kB → 439kB).

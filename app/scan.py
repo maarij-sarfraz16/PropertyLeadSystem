@@ -1,138 +1,142 @@
-"""Phase 1a entry point: one-shot scan of a single source.
+"""Manual scan CLI — a diagnostic tool, not the way leads normally arrive.
 
-    python -m app.scan --source zameen --fixtures            # offline sample, needs GEMINI_API_KEY
-    python -m app.scan --source zameen --fixtures --dry-run   # extract + print, no DB write
-    python -m app.scan --source zameen --limit 50             # live via Apify, writes to DB
+Automation is the default path: the background worker starts with the API and scans
+continuously (see `app.worker.scanner`). This command exists to run a single cycle on demand
+when debugging a source, verifying credentials, or inspecting extraction output.
 
-Flow: fetch -> Gemini extract -> (write raw_posts + leads) -> print table.
-Dedup and scoring arrive in Phase 2; here every genuine listing becomes one lead.
+    python -m app.scan --source zameen                 # one live cycle, writes to DB
+    python -m app.scan --source zameen --fixtures      # offline sample
+    python -m app.scan --source zameen --dry-run       # fetch + extract, print, no DB write
+    python -m app.scan --watch                         # run the worker loop in the foreground
+
+It calls the same `run_scan_cycle` the worker calls, so what you see here is exactly what
+automation does.
 """
 from __future__ import annotations
+
+import asyncio
 
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import select
 
-from app.db.models import Lead, LeadSource, Photo, RawPost, Source
-from app.db.session import session_scope
-from app.extraction.gemini import GeminiExtractor
-from app.extraction.schema import ExtractedLead
-from app.pipeline.normalize import normalize_phone
-from app.sources.base import RawPostData, SourceAdapter
-from app.sources.zameen import ZameenAdapter
+from app.extraction.service import get_extraction_service
+from app.logging_config import configure_logging
+from app.pipeline.ingest import UnknownSourceError, build_adapter, run_scan_cycle
 
 app = typer.Typer(add_completion=False)
 console = Console()
 
-# Source registry. Adding a source in Phase 2 = one entry here + an adapter.
-_ADAPTERS = {"zameen": ZameenAdapter}
-
-
-def _build_adapter(name: str, use_fixtures: bool) -> SourceAdapter:
-    if name not in _ADAPTERS:
-        raise typer.BadParameter(f"unknown source '{name}'. Known: {list(_ADAPTERS)}")
-    config: dict = {}
-    if not use_fixtures:
-        with session_scope() as s:
-            src = s.scalar(select(Source).where(Source.name == name))
-            if src is None:
-                raise typer.BadParameter(
-                    f"source '{name}' not in DB. Run `python -m app.db.init_db` first, "
-                    f"or pass --fixtures for offline runs."
-                )
-            config = dict(src.config or {})
-    return _ADAPTERS[name](config=config, use_fixtures=use_fixtures)
-
-
-def _persist(source_name: str, post: RawPostData, extracted: ExtractedLead) -> None:
-    """Write the raw post, and a canonical lead if it is a genuine listing."""
-    with session_scope() as s:
-        src = s.scalar(select(Source).where(Source.name == source_name))
-        raw = s.scalar(
-            select(RawPost).where(
-                RawPost.source_id == src.id, RawPost.external_id == post.external_id
-            )
-        )
-        if raw is None:
-            raw = RawPost(
-                source_id=src.id,
-                external_id=post.external_id,
-                url=post.url,
-                text=post.text,
-                raw_json=post.raw_json,
-            )
-            s.add(raw)
-            s.flush()
-
-        if not extracted.is_property_listing:
-            return
-
-        lead = Lead(
-            intent=extracted.intent.value,
-            location_text=extracted.location_text,
-            price=extracted.price,
-            currency=extracted.currency,
-            area_value=extracted.area_value,
-            area_unit=extracted.area_unit,
-            bedrooms=extracted.bedrooms,
-            seller_type=extracted.seller_type.value,
-            contact_phone=normalize_phone(extracted.contact_phone),
-            contact_name=extracted.contact_name,
-            description=extracted.description,
-            extraction_confidence=extracted.confidence,
-        )
-        s.add(lead)
-        s.flush()
-        s.add(LeadSource(lead_id=lead.id, raw_post_id=raw.id))
-        for url in post.photo_urls:
-            s.add(Photo(lead_id=lead.id, url=url))
-
 
 @app.command()
 def scan(
-    source: str = typer.Option(..., help="Source name, e.g. zameen"),
-    limit: int = typer.Option(50, help="Max posts to fetch"),
-    fixtures: bool = typer.Option(False, help="Use bundled offline sample (no Apify/network)"),
-    dry_run: bool = typer.Option(False, help="Extract and print only; do not write to DB"),
+    source: str = typer.Option("zameen", help="Source name, e.g. zameen"),
+    limit: int = typer.Option(25, help="Max listings to fetch this cycle"),
+    fixtures: bool = typer.Option(False, help="Use the bundled offline sample (no network)"),
+    dry_run: bool = typer.Option(False, help="Fetch and extract only; do not write to DB"),
+    watch: bool = typer.Option(False, help="Run the background worker loop in the foreground"),
 ) -> None:
-    adapter = _build_adapter(source, fixtures)
-    posts = adapter.fetch(limit=limit)
-    console.print(f"[bold]{len(posts)}[/bold] posts fetched from '{source}'. Extracting...")
+    configure_logging()
 
-    extractor = GeminiExtractor()
-    rows: list[tuple[RawPostData, ExtractedLead]] = []
-    for post in posts:
-        extracted = extractor.extract(post.text)
-        rows.append((post, extracted))
-        if not dry_run:
-            _persist(source, post, extracted)
+    if watch:
+        _watch()
+        return
 
-    _print_table(rows)
-    leads = sum(1 for _, e in rows if e.is_property_listing)
+    if dry_run:
+        _dry_run(source, limit, fixtures)
+        return
+
+    try:
+        result = run_scan_cycle(source, use_fixtures=fixtures, limit=limit)
+    except UnknownSourceError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
     console.print(
-        f"\n[green]{leads}[/green] genuine listings / {len(rows)} posts"
-        + ("  [dim](dry-run: nothing written)[/dim]" if dry_run else "  written to DB")
+        f"\nfetched [bold]{result.fetched}[/bold] | "
+        f"new [green]{result.new_count}[/green] | "
+        f"duplicates [yellow]{result.duplicates}[/yellow] | "
+        f"already seen [dim]{result.skipped_seen}[/dim] | "
+        f"not listings [dim]{result.not_listings}[/dim] | "
+        f"invalid [red]{result.invalid}[/red]"
     )
+    if result.new_leads:
+        _print_leads(result.new_leads)
 
 
-def _print_table(rows: list[tuple[RawPostData, ExtractedLead]]) -> None:
-    table = Table(title="Extracted leads")
-    for col in ("id", "listing?", "intent", "location", "price", "beds", "seller", "phone", "conf"):
-        table.add_column(col, overflow="fold")
-    for post, e in rows:
+def _dry_run(source: str, limit: int, fixtures: bool) -> None:
+    """Fetch and extract without touching the database. Useful for checking listing URLs."""
+    try:
+        adapter = build_adapter(source, fixtures)
+    except UnknownSourceError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    posts = adapter.fetch(limit=limit)
+    extraction = get_extraction_service()
+    console.print(f"[bold]{len(posts)}[/bold] listings fetched from '{source}'. Extracting...")
+
+    table = Table(title="Extracted leads (dry run - nothing written)")
+    columns = (
+        "external_id", "listing?", "intent", "location",
+        "price", "beds", "seller", "phone", "url",
+    )
+    for column in columns:
+        table.add_column(column, overflow="fold")
+
+    for post in posts:
+        extracted = extraction.extract(post.text, post.facts)
         table.add_row(
             post.external_id,
-            "yes" if e.is_property_listing else "no",
-            e.intent.value,
-            e.location_text or "-",
-            f"{e.price:,.0f} {e.currency or ''}".strip() if e.price else "-",
-            str(e.bedrooms) if e.bedrooms is not None else "-",
-            e.seller_type.value,
-            normalize_phone(e.contact_phone) or "-",
-            f"{e.confidence:.2f}",
+            "yes" if extracted.is_property_listing else "no",
+            extracted.intent.value,
+            extracted.location_text or "-",
+            f"{extracted.price:,.0f}" if extracted.price else "-",
+            str(extracted.bedrooms) if extracted.bedrooms is not None else "-",
+            extracted.seller_type.value,
+            extracted.contact_phone or "-",
+            post.url or "[red]MISSING[/red]",
+        )
+
+    console.print(table)
+
+
+def _print_leads(leads: list[dict]) -> None:
+    table = Table(title="New leads")
+    for column in ("title", "location", "price", "beds", "seller", "score", "listing url"):
+        table.add_column(column, overflow="fold")
+    for lead in leads:
+        table.add_row(
+            str(lead.get("title", ""))[:50],
+            str(lead.get("location", "-")),
+            f"{lead.get('price', 0):,.0f}",
+            str(lead.get("bedrooms", 0)),
+            str(lead.get("sellerType", "-")),
+            str(lead.get("score", 0)),
+            lead.get("originalListingUrl") or "[red]MISSING[/red]",
         )
     console.print(table)
+
+
+def _watch() -> None:
+    """Run the same worker the API hosts, standalone.
+
+    Useful for running scanning as its own process (a separate container or systemd unit)
+    while the API stays stateless — set SCAN_ENABLED=false on the API in that deployment.
+    """
+    from app.worker.scanner import get_worker
+
+    async def main() -> None:
+        worker = get_worker()
+        await worker.start()
+        console.print("[green]Scan worker running.[/green] Press Ctrl+C to stop.")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await worker.stop()
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Worker stopped.[/dim]")
 
 
 if __name__ == "__main__":

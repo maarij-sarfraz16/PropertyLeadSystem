@@ -19,15 +19,6 @@ const initialState: DashboardState = {
     sources: [],
     notifications: [],
     feed: [],
-    analytics: {
-      dailyLeads: [],
-      cityLeads: [],
-      sourceLeads: [],
-      intentMix: [],
-      sellerMix: [],
-      priceDistribution: [],
-      conversion: [],
-    },
     insights: [],
     scoring: [],
     pipeline: [],
@@ -45,8 +36,10 @@ export function useDashboardData() {
   const query = useQuery({
     queryKey: ['dashboard-overview'],
     queryFn: fetchDashboardOverview,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
+    // Aggregates refresh on the stream's `dashboard.updated` event; this is the fallback for
+    // a dropped connection.
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   })
 

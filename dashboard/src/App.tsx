@@ -4,6 +4,7 @@ import { AuthLayout } from './layouts/AuthLayout'
 import { DashboardLayout } from './layouts/DashboardLayout'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { LeadsPage } from './pages/LeadsPage'
 import { AuthProvider, useAuth } from './lib/auth'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -29,7 +30,8 @@ function AppRoutes() {
         }
       >
         <Route path="/admin" element={<DashboardPage role="admin" />} />
-        <Route path="/admin/leads" element={<DashboardPage role="admin" />} />
+        {/* The leads workspace is its own page, not a section of the analytics dashboard. */}
+        <Route path="/admin/leads" element={<LeadsPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Route>
     </Routes>

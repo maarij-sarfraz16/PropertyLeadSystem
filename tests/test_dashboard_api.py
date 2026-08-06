@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
 from app.api.main import _lead_detail, _lead_summary, app, build_dashboard_payload
 from app.db.models import Lead, LeadSource, Photo, RawPost, Source
-
 
 client = TestClient(app)
 
@@ -28,7 +27,7 @@ def test_build_dashboard_payload_includes_live_stats_and_scoring():
         total_leads=2,
         total_posts=10,
         total_sources=3,
-        last_post=datetime(2026, 7, 31, 10, 15, tzinfo=timezone.utc),
+        last_post=datetime(2026, 7, 31, 10, 15, tzinfo=UTC),
         leads=[
             {
                 "id": "lead-1",
@@ -39,7 +38,7 @@ def test_build_dashboard_payload_includes_live_stats_and_scoring():
                 "score": 98,
                 "status": "new",
                 "description": "Luxury house",
-                "last_seen_at": datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc),
+                "last_seen_at": datetime(2026, 7, 31, 10, 0, tzinfo=UTC),
             },
             {
                 "id": "lead-2",
@@ -50,7 +49,7 @@ def test_build_dashboard_payload_includes_live_stats_and_scoring():
                 "score": 92,
                 "status": "reviewed",
                 "description": "Apartment",
-                "last_seen_at": datetime(2026, 7, 31, 9, 30, tzinfo=timezone.utc),
+                "last_seen_at": datetime(2026, 7, 31, 9, 30, tzinfo=UTC),
             },
         ],
         sources=[{"name": "Zameen", "enabled": True}],
@@ -58,9 +57,12 @@ def test_build_dashboard_payload_includes_live_stats_and_scoring():
 
     assert payload["metrics"][0]["label"] == "Total Leads Found"
     assert payload["metrics"][0]["value"] == 2
-    assert payload["analytics"]["cityLeads"][0]["city"] == "Lahore"
     assert payload["scoring"][0]["score"] == 98
     assert payload["pipeline"][0]["label"] == "Scraping"
+    # The dashboard renders no charts; the payload must not carry chart aggregates.
+    assert "analytics" not in payload
+    # Insights still derive from the counters kept for them.
+    assert any("Lahore" in insight for insight in payload["insights"])
 
 
 def test_lead_serialization_uses_backend_fields():
@@ -75,7 +77,7 @@ def test_lead_serialization_uses_backend_fields():
             "images": ["https://example.com/image-1.jpg"],
         },
         text="Beautiful house in DHA",
-        scraped_at=datetime(2026, 7, 31, 11, 0, tzinfo=timezone.utc),
+        scraped_at=datetime(2026, 7, 31, 11, 0, tzinfo=UTC),
     )
     lead = Lead(
         location_text="DHA Phase 6, Lahore",
@@ -87,8 +89,8 @@ def test_lead_serialization_uses_backend_fields():
         description="Beautiful house in DHA",
         score=98,
         status="new",
-        first_seen_at=datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc),
-        last_seen_at=datetime(2026, 7, 31, 11, 0, tzinfo=timezone.utc),
+        first_seen_at=datetime(2026, 7, 31, 10, 0, tzinfo=UTC),
+        last_seen_at=datetime(2026, 7, 31, 11, 0, tzinfo=UTC),
         contact_name="Ali",
         contact_phone="03001234567",
     )

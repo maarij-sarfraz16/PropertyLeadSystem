@@ -1,32 +1,33 @@
-"""Seed demo leads WITHOUT calling Gemini.
+"""Seed demo leads from the bundled fixtures WITHOUT calling an LLM.
 
-Use this to populate the dashboard when you don't have a working GEMINI_API_KEY.
-It takes the bundled zameen fixtures, applies a hand-written extraction for each
-(the same shape Gemini would return), and writes raw_posts + leads to the DB,
-including a plausible score so the dashboard charts have data.
+Useful when you want dashboard data with no API key and no network. It runs the *real*
+ingest pipeline with a stubbed extractor, so the rows it writes are identical in shape to
+scanned rows — dedup keys, scoring and URL validation all apply.
 
-    python -m app.db.init_db     # once, creates tables + seeds the 'zameen' source
-    python -m app.seed_demo      # populates leads
+    python -m app.db.init_db     # once
+    python -m app.seed_demo
 
-Then open the dashboard (http://localhost:5173) or GET /api/leads.
+Note: fixture listing URLs point at example.com and are not real advertisements. This is demo
+data, not a substitute for the automatic scanner, which produces live Zameen leads with
+working links. Remove demo rows again with `python -m app.db.cleanup --demo --apply`.
 """
 from __future__ import annotations
 
 from rich.console import Console
-from sqlalchemy import select
 
-from app.db.models import Lead, LeadSource, Photo, RawPost, Source
-from app.db.session import session_scope
+from app.extraction.base import Extractor
 from app.extraction.schema import ExtractedLead, Intent, SellerType
-from app.pipeline.normalize import normalize_phone
-from app.sources.zameen import ZameenAdapter
+from app.extraction.service import ExtractionService
+from app.logging_config import configure_logging
+from app.pipeline.ingest import run_scan_cycle
 
 console = Console()
 
-# Hand-written extraction for each fixture post, keyed by external_id.
-# (external_id, ExtractedLead, score). score is a stand-in for Phase 2 scoring.
-_EXTRACTIONS: dict[str, tuple[ExtractedLead, float]] = {
-    "zm-1001": (
+# Hand-written extraction per fixture post, keyed by a distinctive phrase in its text. This is
+# the shape a model would return; stubbing it keeps the seeder deterministic and free.
+_BY_PHRASE: list[tuple[str, ExtractedLead]] = [
+    (
+        "DHA Phase 5",
         ExtractedLead(
             is_property_listing=True,
             intent=Intent.sell,
@@ -38,13 +39,12 @@ _EXTRACTIONS: dict[str, tuple[ExtractedLead, float]] = {
             bedrooms=5,
             seller_type=SellerType.owner,
             contact_phone="0300-1234567",
-            contact_name=None,
             description="10 marla brand new double-unit house for sale, direct owner.",
             confidence=0.95,
         ),
-        96,
     ),
-    "zm-1002": (
+    (
+        "Bahria Town",
         ExtractedLead(
             is_property_listing=True,
             intent=Intent.sell,
@@ -53,34 +53,30 @@ _EXTRACTIONS: dict[str, tuple[ExtractedLead, float]] = {
             currency="PKR",
             area_value=5,
             area_unit="marla",
-            bedrooms=None,
             seller_type=SellerType.agent,
             contact_phone="0321 9876543",
             contact_name="Ali",
             description="5 marla residential plot in Bahria Town, sector C.",
             confidence=0.9,
         ),
-        88,
     ),
-    "zm-1003": (
+    (
+        "Johar Town",
         ExtractedLead(
             is_property_listing=True,
             intent=Intent.rent,
             location_text="Johar Town, Lahore",
             price=65_000,
             currency="PKR",
-            area_value=None,
-            area_unit=None,
             bedrooms=3,
             seller_type=SellerType.owner,
             contact_phone="042-35551234",
-            contact_name=None,
             description="Upper portion 3 bed for rent near Emporium, family only.",
             confidence=0.88,
         ),
-        82,
     ),
-    "zm-1004": (
+    (
+        "Gulberg",
         ExtractedLead(
             is_property_listing=True,
             intent=Intent.wanted,
@@ -89,16 +85,14 @@ _EXTRACTIONS: dict[str, tuple[ExtractedLead, float]] = {
             currency="PKR",
             area_value=1,
             area_unit="kanal",
-            bedrooms=None,
             seller_type=SellerType.unknown,
             contact_phone="0345-1122334",
-            contact_name=None,
             description="Wanted: 1 kanal house on rent in Gulberg for a family.",
             confidence=0.8,
         ),
-        74,
     ),
-    "zm-1005": (
+    (
+        "DHA Phase 3",
         ExtractedLead(
             is_property_listing=True,
             intent=Intent.sell,
@@ -107,87 +101,39 @@ _EXTRACTIONS: dict[str, tuple[ExtractedLead, float]] = {
             currency="PKR",
             area_value=2,
             area_unit="marla",
-            bedrooms=None,
             seller_type=SellerType.agent,
             contact_phone="0333-4455667",
             contact_name="Malik Estate",
             description="Ground floor commercial shop for sale in DHA Phase 3.",
             confidence=0.9,
         ),
-        91,
     ),
-    # zm-1006 is a blog post, not a listing -> skipped on purpose.
-}
+]
 
 
-def _persist(source_name: str, post, extracted: ExtractedLead, score: float) -> bool:
-    """Write raw post + a canonical lead (with score). Returns True if a lead was written."""
-    with session_scope() as s:
-        src = s.scalar(select(Source).where(Source.name == source_name))
-        if src is None:
-            raise RuntimeError(
-                "source 'zameen' not in DB. Run `python -m app.db.init_db` first."
-            )
-        raw = s.scalar(
-            select(RawPost).where(
-                RawPost.source_id == src.id, RawPost.external_id == post.external_id
-            )
-        )
-        if raw is None:
-            raw = RawPost(
-                source_id=src.id,
-                external_id=post.external_id,
-                url=post.url,
-                text=post.text,
-                raw_json=post.raw_json,
-            )
-            s.add(raw)
-            s.flush()
+class _FixtureExtractor(Extractor):
+    """Returns the canned extraction for a fixture post; rejects the blog post."""
 
-        if not extracted.is_property_listing:
-            return False
-
-        # Skip if a lead already links this raw post (idempotent re-runs).
-        existing = s.scalar(select(LeadSource).where(LeadSource.raw_post_id == raw.id))
-        if existing is not None:
-            return False
-
-        lead = Lead(
-            intent=extracted.intent.value,
-            location_text=extracted.location_text,
-            price=extracted.price,
-            currency=extracted.currency,
-            area_value=extracted.area_value,
-            area_unit=extracted.area_unit,
-            bedrooms=extracted.bedrooms,
-            seller_type=extracted.seller_type.value,
-            contact_phone=normalize_phone(extracted.contact_phone),
-            contact_name=extracted.contact_name,
-            description=extracted.description,
-            extraction_confidence=extracted.confidence,
-            score=score,
-        )
-        s.add(lead)
-        s.flush()
-        s.add(LeadSource(lead_id=lead.id, raw_post_id=raw.id))
-        for url in post.photo_urls:
-            s.add(Photo(lead_id=lead.id, url=url))
-        return True
+    def extract(self, text: str) -> ExtractedLead:
+        for phrase, extracted in _BY_PHRASE:
+            if phrase.lower() in (text or "").lower():
+                return extracted
+        # zm-1006 is a blog post, not a listing — the pipeline should filter it out.
+        return ExtractedLead(is_property_listing=False, confidence=0.9)
 
 
 def main() -> None:
-    posts = ZameenAdapter(use_fixtures=True).fetch(limit=50)
-    written = 0
-    for post in posts:
-        entry = _EXTRACTIONS.get(post.external_id)
-        if entry is None:
-            continue
-        extracted, score = entry
-        if _persist("zameen", post, extracted, score):
-            written += 1
+    configure_logging()
+    result = run_scan_cycle(
+        "zameen",
+        use_fixtures=True,
+        limit=50,
+        extraction=ExtractionService(_FixtureExtractor()),
+    )
     console.print(
-        f"[green]{written}[/green] demo leads written to DB (Gemini bypassed). "
-        f"Open the dashboard or GET /api/leads."
+        f"[green]{result.new_count}[/green] demo lead(s) written "
+        f"({result.duplicates} duplicate, {result.skipped_seen} already seen, "
+        f"{result.not_listings} not listings). Open the dashboard or GET /api/leads."
     )
 
 

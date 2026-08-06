@@ -1,4 +1,4 @@
-import { Download, Search, SlidersHorizontal } from 'lucide-react'
+import { Download, ExternalLink, Search, SlidersHorizontal } from 'lucide-react'
 import { memo } from 'react'
 import { useMemo, useState } from 'react'
 
@@ -28,9 +28,12 @@ function formatDateLabel(value?: string | null) {
 export const LeadTable = memo(function LeadTable({
   leads,
   onRowClick,
+  highlightIds,
 }: {
   leads: LeadRow[]
   onRowClick: (lead: LeadRow) => void
+  /** Ids of leads that arrived over the realtime stream this session; briefly highlighted. */
+  highlightIds?: ReadonlySet<string>
 }) {
   const [query, setQuery] = useState('')
   const [city, setCity] = useState('all')
@@ -158,6 +161,7 @@ export const LeadTable = memo(function LeadTable({
               <th className="px-3 py-2">Score</th>
               <th className="px-3 py-2">Source</th>
               <th className="px-3 py-2">Date Added</th>
+              <th className="px-3 py-2">Listing</th>
             </tr>
           </thead>
           <tbody>
@@ -165,7 +169,9 @@ export const LeadTable = memo(function LeadTable({
               <tr
                 key={lead.id}
                 onClick={() => onRowClick(lead)}
-                className="cursor-pointer border-t border-white/5 text-slate-200 transition hover:bg-white/4"
+                className={`cursor-pointer border-t border-white/5 text-slate-200 transition hover:bg-white/4 ${
+                  highlightIds?.has(lead.id) ? 'bg-emerald-500/10' : ''
+                }`}
               >
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-2">
@@ -189,6 +195,25 @@ export const LeadTable = memo(function LeadTable({
                 </td>
                 <td className="px-3 py-3">{lead.source}</td>
                 <td className="px-3 py-3 text-slate-400">{formatDateLabel(lead.dateAdded ?? lead.lastSeen)}</td>
+                <td className="px-3 py-3">
+                  {lead.originalListingUrl ? (
+                    <a
+                      href={lead.originalListingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      // The row opens the detail drawer; the link must not also trigger it.
+                      onClick={(event) => event.stopPropagation()}
+                      title={lead.originalListingUrl}
+                      className="inline-flex items-center gap-1 text-sky-300 hover:text-sky-200"
+                    >
+                      Open <ExternalLink className="size-3" />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-500" title="No verified listing URL was captured for this lead.">
+                      Unavailable
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

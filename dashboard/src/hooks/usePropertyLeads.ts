@@ -16,9 +16,14 @@ export function usePropertyLeads() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['property-leads'],
-    queryFn: fetchPropertyLeads,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
+    // Wrapped, not passed by reference: react-query calls queryFn with a context object, which
+    // would otherwise arrive as the `limit` argument.
+    queryFn: () => fetchPropertyLeads(),
+    // New leads arrive over the WebSocket (see useLeadStream), so this poll is only a safety
+    // net for a dropped stream — not the update mechanism. A 5s poll here would issue ~700
+    // needless requests an hour per open tab.
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   })
 

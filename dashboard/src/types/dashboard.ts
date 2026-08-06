@@ -30,6 +30,8 @@ export type SourceStatus = {
   successRate: number
 }
 
+export type LeadStatus = 'new' | 'incomplete' | 'reviewed' | 'assigned' | 'archived'
+
 export type LeadRow = {
   id: string
   title: string
@@ -39,17 +41,22 @@ export type LeadRow = {
   city: string
   location: string
   price: number
+  currency: string
   bedrooms: number
   area: string
   sellerType: 'owner' | 'agent' | 'unknown'
   score: number
   source: string
-  status: 'new' | 'reviewed' | 'assigned'
+  status: LeadStatus
   dateAdded?: string | null
   lastSeen: string
   aiSummary: string
+  /** Deep link to the origin advertisement. Null means no verified link exists — never a
+   *  homepage or search-page substitute. */
   originalListingUrl?: string | null
   scrapedAt?: string | null
+  /** Publish time on the origin platform. */
+  postedAt?: string | null
   contactName?: string | null
   contactPhone?: string | null
 }
@@ -82,27 +89,12 @@ export type NotificationItem = {
   time: string
 }
 
-export type AnalyticsPoint = {
-  [key: string]: string | number
-}
-
-export interface AnalyticsData {
-  dailyLeads: Array<{ day: string; leads: number }>
-  cityLeads: Array<{ city: string; leads: number }>
-  sourceLeads: Array<{ source: string; leads: number }>
-  intentMix: Array<{ name: string; value: number }>
-  sellerMix: Array<{ name: string; value: number }>
-  priceDistribution: Array<{ band: string; count: number }>
-  conversion: Array<{ stage: string; value: number }>
-}
-
 export interface DashboardOverview {
   metrics: Metric[]
   leads: LeadRow[]
   sources: SourceStatus[]
   notifications: NotificationItem[]
   feed: FeedEvent[]
-  analytics: AnalyticsData
   insights: string[]
   scoring: Array<{ id: string; score: number; label: string; city: string; area: string }>
   pipeline: Array<{ label: string; status: string }>
