@@ -24,6 +24,7 @@ from app.api.notifications import router as notifications_router
 from app.api.realtime import router as realtime_router
 from app.api.saved_searches import router as saved_searches_router
 from app.config import get_settings
+from app.db.init_db import init_db
 from app.db.models import Lead, LeadSource, RawPost, ScanState, Source
 from app.db.session import session_scope
 from app.logging_config import configure_logging, get_logger
@@ -46,8 +47,15 @@ __all__ = ["app", "build_dashboard_payload", "_lead_summary", "_lead_detail"]
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Start the scan worker with the API and shut it down cleanly."""
+    """Bring the schema up to date, then start the scan worker with the API.
+
+    init_db is idempotent (CREATE ... IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, backfill only
+    touches un-classified rows, source seed is a no-op when present), so running it on every
+    boot is safe and means `uvicorn app.api.main:app` alone syncs the DB — no manual
+    `python -m app.db.init_db` step after a schema change.
+    """
     configure_logging()
+    init_db()
     settings = get_settings()
     worker = get_worker()
 
